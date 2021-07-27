@@ -153,10 +153,10 @@ X_test = sc.transform(X_test)
 # Create a SVM Regressor
 model = SVRExtended(
     kernel = "rbf", 
-    C = 6.412259, 
-    epsilon = 6.608572, 
-    gamma = 0.053517, 
-    lamda = 0.057786
+    C = 28.9778, 
+    epsilon = 5.7956, 
+    gamma = 0.1081, 
+    lamda = 0.2929
 )
 # Train the model using the training sets 
 model.fit(X_train,y_train);
