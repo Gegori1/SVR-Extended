@@ -154,7 +154,7 @@ class SVRExtended:
         # Support vectors
         #beta_1 = np.array(sol['x']).reshape(-1)
         beta_1 = np.array(sol['x'])
-        beta_n = np.abs(beta_1)/beta_1.max()
+#         beta_n = np.abs(beta_1)/beta_1.max()
         indx = abs(beta_1) > 5e-3
         beta_sv = beta_1[indx]
         x_sv = X[indx[:,0],:]
