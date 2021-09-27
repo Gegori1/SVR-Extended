@@ -6,8 +6,8 @@ Created on Sat Jul  3 17:10:16 2021
 """
 import numpy as np
 
-class SVRExtended:
-    
+class SVRExtended_cvxpy:
+     
     """
     SVR based Elastic Net regularization. 
     
@@ -18,6 +18,7 @@ class SVRExtended:
                
             epsilon: defines the maximum margin in the feature space (Default = 0.1).
                         The bigger its value, the more general~underfitted the model is.
+                        Must be defined with a value between zero and one.
                         
             lamda: controls the implication of the weighted Elastic Net regularization.
                         
@@ -45,11 +46,11 @@ class SVRExtended:
             For more information about each method, visit specific documentations.
             
         --Example-- 
-            ## Call the class in a jupyter notebook
-            >>> from SVRExtended_Library import SVRExtended
+            ## Call the class
+            >>> from SVRExtended_Library import SVRExtended_cvxpy
             ...
             ## Initialize the SVR object with custom parameters
-            >>> model = SVR(C = 10, kernel = "rbf", gamma = 0.1)
+            >>> model = SVRExtended_cvxpy(C = 10, kernel = "rbf", gamma = 0.1)
             ...
             ## Use the model to fit the data
             >>> fitted_model = model.fit(X, y)
@@ -63,24 +64,21 @@ class SVRExtended:
     
     """
     
-    def __init__(self, C = 0.1, epsilon = 0.1, lamda = 0.2, kernel = "linear", **kernel_param):
+    def __init__(self, C = 0.1, epsilon = 0.01, kernel = "linear", lamda = 0.2, **kernel_param):
+        import cvxpy as cp
         import numpy as np
-        from cvxopt import matrix, solvers, sparse
         from sklearn.metrics.pairwise import pairwise_kernels
         from sklearn.utils import check_X_y, check_array 
-        self.sparse = sparse
-        self.matrix = matrix
-        self.solvers = solvers
+        self.cp = cp
         self.C = C
         self.epsilon = epsilon
+        self.lamda = lamda
         self.kernel = kernel
         self.pairwise_kernels = pairwise_kernels
         self.kernel_param = kernel_param
         self.check_X_y = check_X_y
         self.check_array = check_array
-        self.lamda = lamda
         
-    def fit(self, X, y):
         """ 
         Computes coefficients for new data prediction.
         
@@ -96,65 +94,42 @@ class SVRExtended:
                 self, containing all the parameters needed to 
                 compute new data points.
         """
+        
+    def fit(self, X, y):
         X, y = self.check_X_y(X, y)
         # hyperparameters
         C = self.C 
         epsilon =  self.epsilon
         lamda = self.lamda
-        
         kernel = self.kernel
         pairwise_kernels = self.pairwise_kernels
-        
-        sparse = self.sparse 
-        matrix = self.matrix 
-        solvers = self.solvers 
-        
+        cp = self.cp
         # Useful parameters
         ydim = y.shape[0]
         onev = np.ones((ydim,1))
-        x0 = np.random.rand(ydim)
         
-        # Prematrices for the optimizer
+        # Matrices for the optimizer
         K = pairwise_kernels(X, X, metric = kernel, **self.kernel_param)
         A = onev.T
-        b = 0.0
+        b = 0
         G = np.concatenate((np.identity(ydim), -np.identity(ydim)))
         h_ = np.concatenate((C*np.ones(ydim), C*np.ones(ydim))); 
         h = h_.reshape(-1, 1)
-
-        # Matrices for the optimizer
-        A = matrix(A)
-        b = matrix(b)
-        G = sparse(matrix(G))
-        h = matrix(h)
+        
+        # loss function and constraints
+        beta = cp.Variable((ydim,1))
         Ev = (epsilon*onev.T)
-        
-        # functions for the optimizer
-        def obj_func(x):
-            return 0.5* x.T @ K @ x - y.T @ x + lamda*((1-Ev) @ np.abs(x) + Ev/2 @ x**2)
 
-        def obj_grad(x):
-            return x.T @ K + lamda*((1 - Ev) @ (x/np.abs(x)) + Ev @ x) - y
+        min_fun = (1/2)*cp.quad_form(beta, K) - y.T @ beta + lamda*((1-Ev) @ cp.abs(beta) + Ev/2 @ beta**2)
+        objective = cp.Minimize(min_fun)
+        constraints = [A @ beta == b, G @ beta <= h]
         
-        def F(x = None, z = None):
-            if x is None: return 0, matrix(x0)
-            # objective dunction
-            val = matrix(obj_func(x))
-            # obj. func. gradient
-            Df = matrix(obj_grad(x))
-            if z is None: return val, Df
-            # hessian
-            H = matrix(z[0] * K)
-            return val, Df, H
+        # Solver and solution
+        prob = cp.Problem(objective,constraints)
+        result = prob.solve()
         
-        # Solver
-        solvers.options['show_progress'] = False
-        sol = solvers.cp(F=F, G=G, h=h, A=A, b=b)
-        
-        # Support vectors
-        #beta_1 = np.array(sol['x']).reshape(-1)
-        beta_1 = np.array(sol['x'])
-#         beta_n = np.abs(beta_1)/beta_1.max()
+        # support vectors
+        beta_1 = np.array(beta.value)
         indx = abs(beta_1) > 5e-3
         beta_sv = beta_1[indx]
         x_sv = X[indx[:,0],:]
@@ -162,7 +137,7 @@ class SVRExtended:
         
         # get w_phi and b
         k_sv = pairwise_kernels(x_sv, x_sv, metric = kernel, **self.kernel_param)
-        cons = np.where(beta_sv >= 0, - epsilon, epsilon)
+        cons = np.where(beta_sv >= 0, -epsilon, epsilon)
         
         w_phi = beta_sv @ k_sv
         b = np.mean((cons - w_phi + y_sv)); self.b = b
@@ -192,8 +167,8 @@ class SVRExtended:
     
     def coef_(self):
         """--Returns--
-                - dual support vectors
-                - primal support vectors
-                - intercept"""
+                - Dual Coefficients
+                - Support vectors
+                - intercept
+        """
         return self.beta_sv, self.x_sv, self.b
-    
